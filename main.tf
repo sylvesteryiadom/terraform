@@ -161,14 +161,8 @@ resource "aws_instance" "myapp-server" {
   key_name                    = aws_key_pair.ssh-key.key_name
 
   # installing apps
-  user_data = <<EOF
-                #!/bin/bash
-                sudo yum update -y && sudo yum install docker -y
-                sudo systemctl start docker
-                sudo usermod -aG docker ec2-user
-                docker run -p nginx 8080:80
-              EOF
-              
+  user_data = file("entry-script.sh")
+
   tags = {
     "Name" : "${var.env_prefix}-server"
   }
