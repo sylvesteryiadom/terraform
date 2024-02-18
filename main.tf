@@ -2,12 +2,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-variable "vpc_cidr_blocks" {}
-variable "subnet_cidr_blocks" {}
-variable "avail_zone" {}
-variable "env_prefix" {}
-variable "my_ip" {}
-
 resource "aws_vpc" "myapp-vpc" {
   cidr_block = var.vpc_cidr_blocks
   tags = {
@@ -111,21 +105,80 @@ resource "aws_default_security_group" "default-sg" {
   }
 
   ingress {
-    from_port  = 8080
-    to_port    = 8080
-    protocol   = "tcp"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Optionally, you can add egress rules here
-    egress {
-    from_port  = 0
-    to_port    = 0
-    protocol   = "-1"
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-tags = {
+  tags = {
     Name : "${var.env_prefix}-default-sg"
   }
+}
+
+# get ami id dynamically
+
+data "aws_ami" "latest-amazon-ami" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-kernel-5.10-hvm-*-x86_64-gp2"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# Adding ec2 instance
+
+# generate keypair
+resource "aws_key_pair" "ssh-key" {
+  key_name   = "server-key"
+  public_key = file(var.my_public_key)
+  # public_key = var.my_public_key
+}
+resource "aws_instance" "myapp-server" {
+  ami           = data.aws_ami.latest-amazon-ami.id
+  instance_type = var.instance_type
+
+  # optional args
+
+  subnet_id              = aws_subnet.myapp-subnet-1.id
+  vpc_security_group_ids = [aws_default_security_group.default-sg.id]
+  availability_zone      = var.avail_zone
+  # create public IP address
+  associate_public_ip_address = true
+  key_name                    = aws_key_pair.ssh-key.key_name
+
+  # installing apps
+  user_data = <<EOF
+                #!/bin/bash
+                sudo yum update -y && sudo yum install docker -y
+                sudo systemctl start docker
+                sudo usermod -aG docker ec2-user
+                docker run -p nginx 8080:80
+              EOF
+              
+  tags = {
+    "Name" : "${var.env_prefix}-server"
+  }
+}
+
+
+output "aws_ami_id" {
+  value = data.aws_ami.latest-amazon-ami.id
+}
+
+output "myapp_server_public_ip" {
+  value = aws_instance.myapp-server.public_ip
 }
